@@ -72,8 +72,6 @@ class FeedForwardBlock(nn.Module):
         return self.linear_2(x)
     
 
-
-
 class MultiHeadAttentionBlock(nn.Module):
     def __init__(self, d_model:int, h:int , dropout:float):
         super().__init__()
@@ -116,7 +114,7 @@ class MultiHeadAttentionBlock(nn.Module):
         key = self.w_k(k)
         value = self.w_v(v)
 
-        query = query.view(query.shape[0], query.hsape[1], self.h, self.d_k).transpose(1, 2)
+        query = query.view(query.shape[0], query.shape[1], self.h, self.d_k).transpose(1, 2)
         key = key.view(query.shape[0], query.shape[1], self.h, self.d_k).transpose(1 ,2)
         value = value.view(value.shape[0], value.shape[1], self.h, self.d_k).transpose(1 ,2)
 
@@ -130,6 +128,7 @@ class MultiHeadAttentionBlock(nn.Module):
 class ResidualConnection(nn.Module):
 
     def __init__(self, dropout:float):
+        super().__init__()
         self.dropout = dropout
         self.norm = LayerNormalization()
 
@@ -166,8 +165,6 @@ class Encoder(nn.Module):
         return self.norm(x)
 
 
-
-
 class DecoderBlock(nn.Module):
 
     def __init__(self, self_attention_block:MultiHeadAttentionBlock, cross_attention_block:MultiHeadAttentionBlock,
@@ -177,7 +174,7 @@ class DecoderBlock(nn.Module):
         self.self_attention_block = self_attention_block
         self.cross_attention_block = cross_attention_block
         self.feed_forward_block = feed_forward_block
-        self.residual_connection = nn.ModuleList([ResidualConnection(dropout)])
+        self.residual_connection = nn.ModuleList([ResidualConnection(dropout) for _ in range(3)])
 
 
     def forward(self, x, encoder_output, src_mask, tgt_mask):
@@ -185,7 +182,6 @@ class DecoderBlock(nn.Module):
         x = self.residual_connection[1](x, lambda x: self.cross_attention_block(x, encoder_output, encoder_output, src_mask))
         x = self.residual_connection[2](x, self.feed_forward_block)
         return x
-    
 
 
 
@@ -202,3 +198,41 @@ class Decoder(nn.Module):
 
         return self.norm(x)
         
+
+class ProjectionLayer(nn.Module):
+    def __init__(self, d_model: int, vocab_size:int):
+        super().__init__()
+        self.proj = nn.Linear(d_model, vocab_size)
+
+    def forward(self, x):
+        return torch.log_softmax(self.proj(x),dim=-1)
+    
+
+class Transformer(nn.Module):
+    def __init__(self, encoder: Encoder, decoder:Decoder, src_embed: InputEmbeddings, 
+                 tgt_embed: InputEmbeddings, src_pos:PositionalEncodings,tgt_pos:PositionalEncodings,
+                 projection_layer:ProjectionLayer):
+        
+        super().__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+        self.src_embed = src_embed
+        self.tgt_embed = tgt_embed
+        self.src_pos = src_pos
+        self.tgt_pos = tgt_pos
+        self.projection_layer = projection_layer
+
+    
+    def encode(self, src, src_mask):
+        src = self.src_embed(src)
+        src = self.src_pos(src)
+        return self.encoder(src,src_mask)
+    
+    def decode(self, encoder_output, src_mask,tgt,tgt_mask):
+        tgt = self.tgt_embed(tgt)
+        tgt = self.tgt_pos(tgt)
+        return self.decoder(tgt, encoder_output, src_mask, tgt_mask)
+    
+    def project(self, x):
+        return self.projection_layer(x)
+
