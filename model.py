@@ -109,27 +109,30 @@ class MultiHeadAttentionBlock(nn.Module):
     
 
 
-    def forward(self, q,k,v, mask):
-        query = self.w_q(q)
-        key = self.w_k(k)
-        value = self.w_v(v)
+    def forward(self, q, k, v, mask):
+        # Linear projections: (B, S, d_model) -> (B, S, d_model)
+        q = self.w_q(q)
+        k = self.w_k(k)
+        v = self.w_v(v)
 
-        query = query.view(query.shape[0], query.shape[1], self.h, self.d_k).transpose(1, 2)
-        key = key.view(query.shape[0], query.shape[1], self.h, self.d_k).transpose(1 ,2)
-        value = value.view(value.shape[0], value.shape[1], self.h, self.d_k).transpose(1 ,2)
+        B, S, _ = q.shape  # batch, seq_len
+        # reshape to heads: (B, S, h, d_k) -> (B, h, S, d_k)
+        q = q.view(B, S, self.h, self.d_k).transpose(1, 2)
+        k = k.view(B, S, self.h, self.d_k).transpose(1, 2)
+        v = v.view(B, S, self.h, self.d_k).transpose(1, 2)
 
-        x, self.attention_score = self.attention(query, key, value, mask, self.dropout)
+        # attention
+        x, self.attention_score = self.attention(q, k, v, mask, self.dropout)
 
-        x = x.transpose(1,2).contiguous().view(x.shape[0], -1, self.h * self.d_k)
+        # back to (B, S, d_model)
+        x = x.transpose(1, 2).contiguous().view(B, S, self.h * self.d_k)
         return self.w_o(x)
-    
 
 
 class ResidualConnection(nn.Module):
-
-    def __init__(self, dropout:float):
+    def __init__(self, dropout: float):
         super().__init__()
-        self.dropout = dropout
+        self.dropout = nn.Dropout(dropout)  
         self.norm = LayerNormalization()
 
     def forward(self, x, sublayer):
