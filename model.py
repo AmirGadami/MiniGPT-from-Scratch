@@ -110,22 +110,25 @@ class MultiHeadAttentionBlock(nn.Module):
 
 
     def forward(self, q, k, v, mask):
-        # Linear projections: (B, S, d_model) -> (B, S, d_model)
-        q = self.w_q(q)
-        k = self.w_k(k)
-        v = self.w_v(v)
+    # Linear projections: (B, S, d_model) -> (B, S, d_model)
+        q = self.w_q(q)   # (B, S_q, d_model)
+        k = self.w_k(k)   # (B, S_k, d_model)
+        v = self.w_v(v)   # (B, S_v, d_model)
 
-        B, S, _ = q.shape  # batch, seq_len
-        # reshape to heads: (B, S, h, d_k) -> (B, h, S, d_k)
-        q = q.view(B, S, self.h, self.d_k).transpose(1, 2)
-        k = k.view(B, S, self.h, self.d_k).transpose(1, 2)
-        v = v.view(B, S, self.h, self.d_k).transpose(1, 2)
+        B, S_q, _ = q.shape
+        _, S_k, _ = k.shape
+        _, S_v, _ = v.shape
 
-        # attention
+        # reshape to heads
+        q = q.view(B, S_q, self.h, self.d_k).transpose(1, 2)  # (B, h, S_q, d_k)
+        k = k.view(B, S_k, self.h, self.d_k).transpose(1, 2)  # (B, h, S_k, d_k)
+        v = v.view(B, S_v, self.h, self.d_k).transpose(1, 2)  # (B, h, S_v, d_k)
+
+        # scaled dot-product attention
         x, self.attention_score = self.attention(q, k, v, mask, self.dropout)
+        # (B, h, S_q, d_k) -> (B, S_q, d_model)
+        x = x.transpose(1, 2).contiguous().view(B, S_q, self.h * self.d_k)
 
-        # back to (B, S, d_model)
-        x = x.transpose(1, 2).contiguous().view(B, S, self.h * self.d_k)
         return self.w_o(x)
 
 
@@ -208,7 +211,8 @@ class ProjectionLayer(nn.Module):
         self.proj = nn.Linear(d_model, vocab_size)
 
     def forward(self, x):
-        return torch.log_softmax(self.proj(x),dim=-1)
+        # return torch.log_softmax(self.proj(x),dim=-1)
+        return self.proj(x)
     
 
 class Transformer(nn.Module):
